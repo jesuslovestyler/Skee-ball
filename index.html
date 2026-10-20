@@ -16,7 +16,6 @@
         --accent:#c23b2e; --accent-ink:#ffffff;
         --teal:#14655a; --gold:#e9a13b; --gold-deep:#b97a1c;
         --chip:#f3e7c8; --shadow:0 10px 30px rgba(84,58,20,.18);
-        --bulb-off:#d8cba6;
       }
       @media (prefers-color-scheme: dark){
         :root{
@@ -25,7 +24,6 @@
           --accent:#e0574a; --accent-ink:#ffffff;
           --teal:#2b8a7a; --gold:#f0b45a; --gold-deep:#d99a35;
           --chip:#2a332b; --shadow:0 10px 30px rgba(0,0,0,.45);
-          --bulb-off:#3a443c;
         }
       }
       *{ box-sizing:border-box; }
@@ -120,39 +118,6 @@
       .readout{ font-size:14px; color:var(--muted); min-height:20px; font-variant-numeric:tabular-nums; }
       .hint{ font-size:14.5px; color:var(--muted); line-height:1.5; margin:8px 0 0; }
       .hint strong{ color:var(--ink); }
-      h2{
-        font-family:"Archivo Black","Archivo",sans-serif; font-size:clamp(22px,5.4vw,30px);
-        margin:4px 0 4px;
-      }
-      /* ---------- Light Chase ---------- */
-      .ring-wrap{ display:flex; flex-direction:column; align-items:center; gap:6px; padding-top:4px; }
-      .ring{
-        position:relative; width:min(76vw,330px); height:min(76vw,330px); margin-top:16px;
-      }
-      .ring .hub{
-        position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
-        text-align:center; width:46%;
-      }
-      .ring .hub .hub-score{ font-family:"Archivo Black","Archivo",sans-serif; font-size:34px; line-height:1; font-variant-numeric:tabular-nums; }
-      .ring .hub .hub-sub{ font-size:12px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); margin-top:4px; }
-      .bulb{
-        position:absolute; width:22px; height:22px; border-radius:50%;
-        background:var(--bulb-off); border:2px solid rgba(0,0,0,.14);
-        transform:translate(-50%,-50%);
-      }
-      @media (max-width:420px){ .bulb{ width:18px; height:18px; } }
-      .bulb.on{
-        background:var(--gold); border-color:var(--gold-deep);
-        box-shadow:0 0 18px 5px rgba(240,180,90,.85);
-      }
-      .bulb.target{ border:3px solid var(--accent); }
-      .bulb.target::after{
-        content:"100"; position:absolute; left:50%; top:-21px; transform:translateX(-50%);
-        font-size:11px; font-weight:900; color:var(--accent); letter-spacing:.03em;
-      }
-      .bulb.hit{ background:var(--teal); border-color:var(--teal); box-shadow:0 0 16px 4px rgba(43,138,122,.7); }
-      .lc-result{ min-height:26px; font-weight:900; font-size:19px; text-align:center; }
-      .lc-row{ display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-top:4px; }
       @media (prefers-reduced-motion: reduce){
         .announce.show{ animation-duration:.01s; }
       }
@@ -198,29 +163,6 @@
           </div>
           <div class="readout" id="readout">Flick the ball up the lane — a quick snap throws harder than a slow drag.</div>
           <p class="hint"><strong>Throw:</strong> press on the ball, flick upward and let go. The flick's <strong>speed</strong> is the power; its sideways slant is the aim. <strong>Keyboard:</strong> hold <strong>Space</strong> to charge the power meter, tap <strong>←</strong> / <strong>→</strong> to aim, release Space to roll. Too soft and the ball rolls back for 0; a near-perfect full-power throw angled just right can drop a corner 100.</p>
-        </div>
-      </section>
-
-      <section class="game" aria-label="Light Chase game">
-        <h2>Light Chase</h2>
-        <p class="lede" style="margin-bottom:4px;">One light races around the ring, faster every round. Stop it dead on the red-ringed bulb at the top for 100 — one bulb off pays 50, then 25, then 10. Five rounds a game.</p>
-        <div class="scorebar">
-          <div class="stat"><div class="k">Score</div><div class="v" id="lcScore">0</div></div>
-          <div class="stat"><div class="k">Round</div><div class="v" id="lcRound">– of 5</div></div>
-          <div class="stat"><div class="k">Best game</div><div class="v" id="lcBest">0</div></div>
-        </div>
-        <div class="ring-wrap">
-          <div class="ring" id="ring">
-            <div class="hub">
-              <div class="hub-score" id="lcHub">0</div>
-              <div class="hub-sub">points</div>
-            </div>
-          </div>
-          <div class="lc-result" id="lcResult">Press Start, then stop the light on the 100 bulb.</div>
-          <div class="lc-row">
-            <button class="btn teal" id="lcStart" type="button">Start</button>
-            <button class="btn" id="lcStop" type="button" disabled>Stop the Light!</button>
-          </div>
         </div>
       </section>
     </div>
@@ -786,19 +728,35 @@
         var samples = drag.samples; drag = null; dragOffset = { x: 0, y: 0 };
         if (cancelled || sb.busy || sb.gameOver) return;
         samples.push({ t: e.timeStamp, x: e.clientX, y: e.clientY });
-        // velocity from the last ~110 ms of the flick: speed, not distance
-        var end = samples[samples.length - 1], ref = samples[0];
-        for (var i = samples.length - 1; i >= 0; i--){
-          if (end.t - samples[i].t >= 110){ ref = samples[i]; break; }
-          ref = samples[i];
+        var first = samples[0], end = samples[samples.length - 1];
+        // Gate 1 — a throw needs a genuine upward flick: the press must
+        // actually travel up the screen. A plain tap, however long it is
+        // held, moves only a few px of jitter and can never qualify.
+        var upTravel = first.y - end.y;
+        if (upTravel < 36){
+          elReadout.textContent = "Flick upward to throw — press on the ball, snap it up the lane, and let go. A tap won't roll it.";
+          return;
         }
-        var dtms = Math.max(16, end.t - ref.t);
+        // Release velocity from a smoothed recent window: the earliest
+        // sample at least ~100 ms before the release, so speed is measured
+        // over a real span of motion — never a couple of jittery px
+        // divided by a couple of ms (which is how a tap used to explode
+        // into a 41% throw).
+        var ref = first;
+        for (var i = samples.length - 1; i >= 0; i--){
+          if (end.t - samples[i].t >= 100){ ref = samples[i]; break; }
+        }
+        var dtms = Math.max(40, end.t - ref.t);
         var vx = (end.x - ref.x) / dtms * 1000;   // px per second
         var vy = (end.y - ref.y) / dtms * 1000;
-        if (vy > -240) { elReadout.textContent = "That was a push, not a flick — snap the ball upward and let go."; return; }
+        // Gate 2 — the release itself must be moving upward fast. A slow
+        // drag that merely ends high on the screen is a push, not a flick.
+        if (vy > -320) { elReadout.textContent = "That was a push, not a flick — snap the ball upward and let go."; return; }
         var speed = Math.sqrt(vx * vx + vy * vy);
         var power = Math.max(0.03, Math.min(1, (speed - 300) / 2000));
-        var aim = Math.max(-1, Math.min(1, (vx / -vy) * 1.15));
+        // Aim is the flick's slant, kept near centre (±35%): touch jitter
+        // and mostly-sideways swipes can nudge it, never whip it wild.
+        var aim = Math.max(-0.35, Math.min(0.35, (vx / -vy) * 1.15));
         sb.aim = aim;
         doThrow(power, aim, false);
       }
@@ -846,106 +804,6 @@
         scoreFor: scoreFor,
         reset: startGame,
         state: function(){ return { ballsLeft: sb.ballsLeft, scores: sb.scores.slice(), total: sb.total, best: sb.best, gameOver: sb.gameOver, busy: sb.busy }; }
-      };
-
-      /* ================= Light Chase ================= */
-      var LC_KEY = "lightchase.best";
-      var lc = {
-        n: 24, idx: 0, running: false, timer: null, interval: 95,
-        round: 0, scores: [], total: 0, best: loadBest(LC_KEY), over: true
-      };
-      var ringEl = document.getElementById("ring"),
-          lcScoreEl = document.getElementById("lcScore"),
-          lcRoundEl = document.getElementById("lcRound"),
-          lcBestEl = document.getElementById("lcBest"),
-          lcHubEl = document.getElementById("lcHub"),
-          lcResultEl = document.getElementById("lcResult"),
-          lcStartBtn = document.getElementById("lcStart"),
-          lcStopBtn = document.getElementById("lcStop");
-      lcBestEl.textContent = lc.best;
-      var bulbs = [];
-      for (var bi = 0; bi < lc.n; bi++){
-        var b = document.createElement("div");
-        b.className = "bulb" + (bi === 0 ? " target" : "");
-        var ang = (bi / lc.n) * Math.PI * 2 - Math.PI / 2;
-        b.style.left = (50 + 44 * Math.cos(ang)) + "%";
-        b.style.top = (50 + 44 * Math.sin(ang)) + "%";
-        ringEl.appendChild(b);
-        bulbs.push(b);
-      }
-      function lcRender(){
-        lcScoreEl.textContent = lc.total;
-        lcHubEl.textContent = lc.total;
-        lcRoundEl.textContent = lc.round === 0 ? "– of 5" : (Math.min(5, lc.round) + " of 5");
-        for (var i = 0; i < lc.n; i++)
-          bulbs[i].classList.toggle("on", lc.running && i === lc.idx);
-      }
-      function lcTick(){
-        if (!lc.running) return;
-        lc.idx = (lc.idx + 1) % lc.n;
-        lcRender();
-        lc.timer = setTimeout(lcTick, lc.interval);
-      }
-      function lcPointsFor(idx){
-        var d = Math.min(idx, lc.n - idx);
-        if (d === 0) return 100;
-        if (d === 1) return 50;
-        if (d === 2) return 25;
-        if (d === 3) return 10;
-        return 0;
-      }
-      function lcStart(){
-        ensureAudio();
-        lc.round = 0; lc.scores = []; lc.total = 0; lc.over = false;
-        lcStartBtn.disabled = true;
-        lcNextRound();
-      }
-      function lcNextRound(){
-        lc.round++;
-        lc.interval = Math.max(26, Math.round(95 * Math.pow(0.9, lc.round - 1)));
-        lc.idx = Math.floor(Math.random() * lc.n);
-        lc.running = true;
-        lcStopBtn.disabled = false;
-        lcResultEl.textContent = "Round " + lc.round + " — stop it on the 100 bulb!";
-        lcRender();
-        clearTimeout(lc.timer);
-        lc.timer = setTimeout(lcTick, lc.interval);
-      }
-      function lcStop(){
-        if (!lc.running) return;
-        lc.running = false;
-        clearTimeout(lc.timer);
-        lcStopBtn.disabled = true;
-        var pts = lcPointsFor(lc.idx);
-        lc.scores.push(pts); lc.total += pts;
-        bulbs[lc.idx].classList.add("hit");
-        setTimeout(function(){ bulbs[lc.idx].classList.remove("hit"); }, 900);
-        if (pts === 100){ lcResultEl.textContent = "Dead on — 100 points!"; chime(true); }
-        else if (pts > 0){ lcResultEl.textContent = "So close — " + pts + " points."; chime(false); }
-        else { lcResultEl.textContent = "Missed the zone — 0 points."; sadTone(); }
-        clickSnd();
-        lcRender();
-        if (lc.round >= 5){
-          lc.over = true;
-          var isBest = lc.total > lc.best;
-          if (isBest){ lc.best = lc.total; saveBest(LC_KEY, lc.best); lcBestEl.textContent = lc.best; }
-          setTimeout(function(){
-            lcResultEl.textContent = "Game over — you scored " + lc.total + "." + (isBest ? " A new best!" : " Best: " + lc.best + ".");
-            lcStartBtn.disabled = false;
-            lcStartBtn.textContent = "Play Again";
-          }, 1000);
-        } else {
-          setTimeout(function(){ if (!lc.over) lcNextRound(); }, 1150);
-        }
-      }
-      lcStartBtn.addEventListener("click", function(){ lcStart(); this.blur(); });
-      lcStopBtn.addEventListener("click", function(){ lcStop(); this.blur(); });
-      ringEl.addEventListener("pointerdown", function(){ if (lc.running) lcStop(); });
-      lcRender();
-
-      window.LightChase = {
-        start: lcStart, stop: lcStop, pointsFor: lcPointsFor,
-        state: function(){ return { round: lc.round, scores: lc.scores.slice(), total: lc.total, best: lc.best, running: lc.running, idx: lc.idx }; }
       };
     })();
     </script>
